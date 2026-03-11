@@ -11,6 +11,10 @@ export default {
     const error = ref(null);
     const success = ref(null);
     const isEditing = ref(false);
+
+    console.log('hello in my account view');
+    console.log('asdf');
+    console.log(authStore.user);
     
     const formData = ref({
       username: '',
@@ -93,7 +97,41 @@ export default {
     };
 
     const formatDate = (dateString) => {
-      return new Date(dateString).toLocaleDateString('en-US', {
+      // User date strings seem to be stored in db as ISO 8601 (local time):
+      // YYYY-MM-DDTHH:mm:ss.sss
+      //
+      // ISO 8601 typically provides the Z suffix to clarify UTC+0 (Zulu) time, like so:
+      // YYYY-MM-DDTHH:mm:ss.sssZ
+      //
+      // When building the app, I noticed the time value was really a UTC time, but
+      // the Z was missing, resulting in JS `new Date()` following ISO spec and treating it as local time.
+      //
+      // Altogether, this results in the db returning a string like '2026-03-11T21:11:36.390358'
+      // to represent 3/11/2026 9:11:36pm UTC+0. (aka 5:11:36pm EST or UTC-4)
+      //
+      // However, without the Z, the frontend interprets this as local time,
+      // and shows users in the EST timezone this string:
+      // "March 11, 2026 at 09:11 PM"
+      //
+      // I dug a bit and it seems to be a quirk specific to datetime.isoformat() and sqlalchemy
+      // when using python3 older than py3.11.
+      // In py3.9, isoformat() gives a suffix of '+00:00' instead of 'Z'.
+      // In py3.11, fromisoformat() changed to support parsing out both '+00:00' and 'Z' style.
+      // More info: https://discuss.python.org/t/parse-z-timezone-suffix-in-datetime/2220
+      //
+      // To address the bug, there's two ways to go about it
+      // - backend (ideal in my opinion)
+      //   - (fix problem for future user creation) fix the logic in the backend service that handles user creation.
+      //   - (fix problem for pre-existing users in the db) after, prepare a sql migration to migrate existing timestamps in the db to append the 'Z'. Apply migration to the existing db
+      // - frontend
+      //   - leave backend data as it is. Have the frontend detect a missing suffix and replace with 'Z' as needed
+      let utcDateString = dateString;
+
+      if (!utcDateString.endsWith('Z')) {
+        utcDateString += 'Z';
+      }
+
+      return new Date(utcDateString).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
