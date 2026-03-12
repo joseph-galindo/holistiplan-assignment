@@ -62,3 +62,46 @@ For a project like this, where I am brand new to both the tech stack and the pro
   - Actions column - Edit and Delete buttons could maybe use UX changes. The verbage/language makes it clearer they are buttons, but maybe add cursor pointer styles.
 
 ## Task Notes
+
+### FE-001 - Health Score system
+- Total health score is a single number from 0 to 100
+- Weighting is 40% cpu, 40% memory, 20% disk
+- The way I would approach this is:
+  - Make a single cpu score. Single number, 0 to 40
+  - Make a single memory score. Single number, 0 to 40
+  - Make a single disk score. Single number, 0 to 20
+  - Sum the numbers to arrive at the final `Total health score`
+- Considerations
+  - How to translate the existing metrics to a single cpu/memory/disk score?
+    - CPU
+      - Perfect CPU health score (40) is reached when CPU usage is at 0% (does this assumption make sense?)
+      - Worst CPU health score (0) is reached when CPU usage is at 100% or higher
+      - Formula: 40 * ((100 - Math.min(100, resource_percentage_as_int))/100)
+        - 0% percentage use becomes 40 * 1 = 40.
+        - 50% percentage use becomes 40 * 0.5 = 20.
+        - 100% percentage use becomes 40 * 0 = 0.
+        - 672% percentage use becomes 40 * ((100-100)/100) = 40 * (0/100) = 40 * 0 = 0.
+          - Math.min is used to cover reported percentages over 100%
+    - Memory
+      - Perfect memory health score (40) is reached when memory usage is at 0% (does this assumption make sense?)
+      - Worst memory health score (0) is reached when memory usage is at 100% or higher
+      - Formula: 40 * ((100 - Math.min(100, resource_percentage_as_int))/100)
+    - Disk
+      - Perfect disk score (20) is reached when disk usage is at 0% (does this assumption make sense?)
+      - Worst disk score (0) is reached when disk usage is at 100% or higher
+      - Formula: 20 * ((100 - Math.min(100, resource_percentage_as_int))/100)
+  - Where should the feature appear in the UI?
+    - For average total health score: I would add it as a third widget in the same row as `Server Status Distribution` and `Average Resource Usage`. Since they are essentially 3 distinct scores summing to the final Health Score, I think it would make sense to show it as a stacked bar chart that stack the 3 discrete scores.
+    - For health score of each individual server: I would add the health score as a new column on the Servers table, very similarly laid out to the existing `Usage` column.
+  - What happens when resource data is missing or invalid?
+    - For cases where data is missing or invalid, there's a few options:
+      - Worst-case projection: warn the user of missing data, and treat that missing sector (eg missing CPU) as fully unhealthy, effectively stubbing in a defualt CPU score of 0.
+      - Best-case projection: warn the user of missing data, and treat that missing sector as some healthy value (either average value for that weighting, or fully healthy).
+      - Dynamic weightings: Given a scenario where CPU score (40% weighting) is missing, that 40% "gap" could be distributed to the other areas (memory, disk) where we do have data on-hand. So in this scenario, memory could take on 60% weighting, and disk could take on 40% weighting, to form the 100% needed to form a full health score. The user needs to be explicitly warned that the weightings changed in this scenario.
+      - Omit total health score: When a sector is missing, intentionally omit the health score from the user entirely.
+    - Personally, I would lean towards `Worst-case projection` for this kind of scenario. My reasoning is that: in a context like server observation, data of this sort missing is almost always a bad signal (eg observability pipeline is failing to write metrics to the expected place). Since this is a bad signal, I would want the UX to err on being overly noisy (alerting to a problem that may or may not exist in the server) instead of being overly optimistic (stubbing in "healthy" data, which can lead to NOT alerting the user when they SHOULD be alerted).
+      - I reject `Best-case projection` since it can give the wrong impression and illusion of a server that is healthier than it really is. 
+      - I reject `Dynamic weightings` because I think the health score calculated from shifting weightings would have little/questionable value to the end user.
+      - I reject `Omit total health score` because I think the UI should try to make a best effort to give the user a health score. In other words, if CPU metrics are down, but we have Memory and Disk metrics, I feel the UI should still try to make a worst-case projection of that score for the user, while factoring in as much real data as possible.
+  - What UX decisions might you make to maximize the value of this health score?
+    - Need to come back to this, I don't fully understand the question
