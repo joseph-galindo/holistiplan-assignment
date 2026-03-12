@@ -30,6 +30,10 @@ For a project like this, where I am brand new to both the tech stack and the pro
   - Server records given from `/api/servers` have a similar UTC timestamp bug as the earlier user timestamp - `server.created_at` and `server.updated_at` both give ISO 8601 time strings, but with no timezone suffix.
 
 **Other Insights**
+- User Registration page
+  - When creating a new user, via an email address that is already used by another pre-existing user, the UI shows an explicit error message that the email is already in use. This could open the app to security problems, specifically enumeration attacks like https://wiki.owasp.org/index.php/Testing_for_User_Enumeration_and_Guessable_User_Account_(OWASP-AT-002) . Basically, an attacker can use the registration form to figure out via brute force if a given email is registered on Holistiserve. From there, the attacker could try to get into the account - typical scenario is, the user re-uses the same password on multiple sites, and their shared password on another website was leaked in a separate data breach. This can be especially bad if the attacker is targeting a Holistiserve admin user. Conventional wisdom on how to handle this is mixed, some recommend [keeping the explicit email error message](https://stackoverflow.com/a/64563596) in favor of more direct/actionable UX, while others recommend [having your backend directly email the provided email address](https://security.stackexchange.com/a/188007) for further verification.
+- User Login page
+  - Logging in with valid credentials to an inactive user shows the UI message that the credentials are invalid. This isn't the worst, but can give the user the wrong idea of what the root problem is. It may be ideal to give a more specific message like "This user is inactive, please contact an admin for more information".
 - Dashboard page
   - Server Status Distribution pie chart:
     - Offline/Error coloring are somewhat close color shades. Could have potential problems for color blind users? I would typically discuss with a designer for a second opinion.
