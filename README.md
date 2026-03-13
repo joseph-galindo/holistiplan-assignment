@@ -43,7 +43,7 @@ A full-stack server management application built with Flask (backend) and Vue 3 
 
 ### Prerequisites
 - Python 3.9+
-- Node.js 20.19.0+ or 22.12.0+ (v21 is not supported)
+- Node.js 20.19.0+ or 22.12.0 <= {version} < 25.0.0 (v21, and v25+ are not supported)
 - npm or yarn
 
 ### Backend Setup
