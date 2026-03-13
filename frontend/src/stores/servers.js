@@ -2,6 +2,51 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { serversAPI, dashboardAPI } from '../services/api';
 
+const generateTransformedServersList = (serversList) => {
+  // Only process arrays. When given other data types, just return them.
+  if (!Array.isArray(serversList)) {
+    return serversList;
+  }
+
+  const transformedServersList = serversList.map((server) => {
+    let transformedMemoryUsage = server.memory_usage;
+
+    if (typeof transformedMemoryUsage === 'number') {
+      transformedMemoryUsage = transformedMemoryUsage / 100;
+    }
+
+    return {
+      ...server,
+      memory_usage: transformedMemoryUsage,
+    };
+  });
+
+  return transformedServersList;
+};
+
+const generateTransformedDashboardStats = (dashboardStats) => {
+  // Only process objects. When given other data types, just return them.
+  if (typeof dashboardStats !== 'object') {
+    return dashboardStats;
+  }
+
+  // Shallow clone to keep the original raw data intact (dont mutate original object fields through ref)
+  const transformedAverageUsage = typeof dashboardStats?.average_usage === 'object'
+    ? { ...dashboardStats.average_usage }
+    : { cpu: 0, disk: 0, memory: 0 };
+
+  if (typeof transformedAverageUsage.memory === 'number') {
+    transformedAverageUsage.memory = transformedAverageUsage.memory / 100;
+  }
+
+  const transformedDashboardStats = {
+    ...dashboardStats,
+    average_usage: transformedAverageUsage,
+  };
+
+  return transformedDashboardStats;
+};
+
 export const useServersStore = defineStore('servers', () => {
   const servers = ref([]);
   const dashboardStats = ref(null);
@@ -33,7 +78,10 @@ export const useServersStore = defineStore('servers', () => {
     
     try {
       const response = await serversAPI.getServers();
-      servers.value = response.data.servers;
+
+      // Apply any frontend-side transformations to the raw backend server list data, then pass to vue
+      const transformedServersList = generateTransformedServersList(response.data.servers);
+      servers.value = transformedServersList;
     } catch (err) {
       error.value = err.response?.data?.error || 'Failed to fetch servers';
       throw err;
@@ -45,7 +93,10 @@ export const useServersStore = defineStore('servers', () => {
   const fetchDashboardStats = async () => {
     try {
       const response = await dashboardAPI.getStats();
-      dashboardStats.value = response.data;
+
+      // Apply any frontend-side transformations to the raw backend dashboard stats data, then pass to vue
+      const transformedDashboardStats = generateTransformedDashboardStats(response.data);
+      dashboardStats.value = transformedDashboardStats;
     } catch (err) {
       console.error('Failed to fetch dashboard stats:', err);
     }
