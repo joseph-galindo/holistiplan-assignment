@@ -27,6 +27,17 @@ export default {
       return colors[status] || 'text-gray-700 bg-gray-100 dark:text-gray-400 dark:bg-gray-800';
     };
 
+    const getHealthScoreColor = (healthScoreText) => {
+      const colors = {
+        'DANGER': 'text-red-700 bg-red-100',
+        'WARN': 'text-yellow-700 bg-yellow-100',
+        'SAFE': 'text-green-700 bg-green-100',
+      };
+      const defaultColor = 'text-gray-900 dark:text-gray-100';
+
+      return colors[healthScoreText] || defaultColor;
+    };
+
     const confirmDelete = (server) => {
       serverToDelete.value = server;
       showDeleteModal.value = true;
@@ -79,6 +90,7 @@ export default {
       showEditModal,
       serverToEdit,
       getStatusColor,
+      getHealthScoreColor,
       confirmDelete,
       deleteServer,
       editServer,
@@ -127,6 +139,9 @@ export default {
                 Usage
               </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Health
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Uptime
               </th>
               <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -167,6 +182,32 @@ export default {
                 </div>
                 <div class="text-sm text-gray-900 dark:text-gray-100">
                   Disk: {{ formatPercent(server.disk_usage) }}%
+                </div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <div 
+                  class="text-sm"
+                  :class="getHealthScoreColor(server.health_score.cpu_text)"
+                >
+                  CPU: {{ server.health_score.cpu }}/40
+                </div>
+                <div
+                  class="text-sm"
+                  :class="getHealthScoreColor(server.health_score.memory_text)"
+                >
+                  Memory: {{ server.health_score.memory }}/40
+                </div>
+                <div
+                  class="text-sm"
+                  :class="getHealthScoreColor(server.health_score.disk_text)"
+                >
+                  Disk: {{ server.health_score.disk }}/20
+                </div>
+                <div 
+                  class="text-sm"
+                  :class="getHealthScoreColor(server.health_score.total_text)"
+                >
+                  Total: {{ server.health_score.total }}/100
                 </div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">

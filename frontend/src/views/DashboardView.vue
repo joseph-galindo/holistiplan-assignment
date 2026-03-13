@@ -33,6 +33,17 @@ export default {
       return colors[status] || 'text-gray-700 bg-gray-100 dark:text-gray-400 dark:bg-gray-800';
     };
 
+    const getHealthScoreColor = (healthScoreText) => {
+      const colors = {
+        'DANGER': 'text-red-700 bg-red-100',
+        'WARN': 'text-yellow-700 bg-yellow-100',
+        'SAFE': 'text-green-700 bg-green-100',
+      };
+      const defaultColor = 'text-gray-900 dark:text-gray-100';
+
+      return colors[healthScoreText] || defaultColor;
+    };
+
     onMounted(async () => {
       await serversStore.fetchServers();
       await serversStore.fetchDashboardStats();
@@ -42,7 +53,8 @@ export default {
       serversStore,
       statusCounts,
       averageUsage,
-      getStatusColor
+      getStatusColor,
+      getHealthScoreColor,
     };
   }
 };
@@ -124,6 +136,9 @@ export default {
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 CPU Usage
               </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Health Score
+              </th>
             </tr>
           </thead>
           <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -150,6 +165,14 @@ export default {
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                 {{ server.cpu_usage }}%
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                <span 
+                  class="text-sm"
+                  :class="getHealthScoreColor(server.health_score.total_text)"
+                >
+                  {{ server.health_score.total }}/100
+                </span>
               </td>
             </tr>
           </tbody>

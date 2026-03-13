@@ -2,6 +2,31 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { serversAPI, dashboardAPI } from '../services/api';
 
+// Resuable fn to turn health score floats/percentages into enum strings expressing health level
+// - 'DANGER' - Score in range of 0 to 0.60
+// - 'WARN' - Score in range of 0.61 to 0.80
+// - 'SAFE' - Score in range of 0.81 to 1.00
+const healthScoreFloatToText = (scoreFloat) => {
+  // Constants
+  const DANGER_UPPER_THRESHOLD = 0.60;
+  const WARN_UPPER_THRESHOLD = 0.80;
+
+  // Only process numbers.
+  if (typeof scoreFloat !== 'number') {
+    return 'DANGER';
+  }
+
+  if (scoreFloat <= DANGER_UPPER_THRESHOLD) {
+    return 'DANGER';
+  }
+
+  if (scoreFloat <= WARN_UPPER_THRESHOLD) {
+    return 'WARN';
+  }
+
+  return 'SAFE';
+};
+
 // Reusable fn, to generate health scores both for:
 // - average dashboard stats (ALL servers holistically)
 // - individual servers (for server table)
@@ -12,9 +37,13 @@ const generateHealthScore = (usageObject) => {
   // Constants
   const healthScoreObject = {
     cpu: 0, // can be 0-40
+    cpu_text: 'DANGER',
     memory: 0, // can be 0-40
+    memory_text: 'DANGER',
     disk: 0, // can be 0-20
+    disk_text: 'DANGER',
     total: 0, // can be 0-100 (sum of all 3 prior scores)
+    total_text: 'DANGER',
   };
   const CPU_WEIGHTING = 0.40;
   const MEMORY_WEIGHTING = 0.40;
@@ -26,8 +55,8 @@ const generateHealthScore = (usageObject) => {
   }
 
   // Expected resulting int values here are 0-100.
-  // For negative outliers (negative usage), cast them to 0 (most healthy)
-  // For positive outliers (over 100% usage), cast them to 100 (most unhealthy)
+  // For negative outliers (negative usage), cast them to 0 (0% use)
+  // For positive outliers (over 100% usage), cast them to 100 (100% use)
   let cpuAsInt = Math.floor(usageObject.cpu * 100);
   cpuAsInt = (cpuAsInt < 0) ? 0 : cpuAsInt;
   cpuAsInt = (cpuAsInt > 100) ? 100 : cpuAsInt;
@@ -41,21 +70,66 @@ const generateHealthScore = (usageObject) => {
   diskAsInt = (diskAsInt > 100) ? 100 : diskAsInt;
 
   // Once we have raw int usage converted from 0 to 100%, turn each into granular health scores by applying weighting to the usage values
+  //
+  // Higher usage should result in a SMALLER health score.
+  // The smaller the health score, the less healthy the server is (0 being worst health).
+  //
+  // Lower usage should result in a LARGER health score.
+  // The larger the health score, the more healthy the server is (100 being perfect health).
+  //
   // Also, use toFixed() string cast, and Number cast, to truncate decimal multi results to 2 decimal places
+
+  // -- START CPU SCORE --
   let cpuHealthScore = CPU_WEIGHTING * (100 - cpuAsInt);
   cpuHealthScore = Number(cpuHealthScore.toFixed(2));
+
+  // Represent CPU health score as a float from 0-1
+  let cpuHealthScoreFloat = cpuHealthScore / (CPU_WEIGHTING * 100);
+  cpuHealthScoreFloat = Number(cpuHealthScoreFloat.toFixed(2));
+
+  // Map CPU health score float to a string enum used for humans, css classes
+  const cpuHealthScoreText = healthScoreFloatToText(cpuHealthScoreFloat);
+  // -- END CPU SCORE --
+
+  // -- START MEMORY SCORE --
   let memoryHealthScore = MEMORY_WEIGHTING * (100 - memoryAsInt);
   memoryHealthScore = Number(memoryHealthScore.toFixed(2));
+
+  let memoryHealthScoreFloat = memoryHealthScore / (MEMORY_WEIGHTING * 100);
+  memoryHealthScoreFloat = Number(memoryHealthScoreFloat.toFixed(2));
+
+  const memoryHealthScoreText = healthScoreFloatToText(memoryHealthScoreFloat);
+  // -- END MEMORY SCORE --
+
+  // -- START DISK SCORE --
   let diskHealthScore = DISK_WEIGHTING * (100 - diskAsInt);
   diskHealthScore = Number(diskHealthScore.toFixed(2));
+
+  let diskHealthScoreFloat = diskHealthScore / (DISK_WEIGHTING * 100);
+  diskHealthScoreFloat = Number(diskHealthScoreFloat.toFixed(2));
+
+  const diskHealthScoreText = healthScoreFloatToText(diskHealthScoreFloat);
+  // -- END DISK SCORE --
+
+  // -- START TOTAL SCORE --
   let totalHealthScore = cpuHealthScore + memoryHealthScore + diskHealthScore;
   totalHealthScore = Number(totalHealthScore.toFixed(2));
 
+  let totalHealthScoreFloat = totalHealthScore / 100;
+  totalHealthScoreFloat = Number(totalHealthScoreFloat.toFixed(2));
+
+  const totalHealthScoreText = healthScoreFloatToText(totalHealthScoreFloat);
+  // -- END TOTAL SCORE --
+
   // Finally, wrap health scores in an object to expose to vue store
   healthScoreObject.cpu = cpuHealthScore;
+  healthScoreObject.cpu_text = cpuHealthScoreText;
   healthScoreObject.memory = memoryHealthScore;
+  healthScoreObject.memory_text = memoryHealthScoreText;
   healthScoreObject.disk = diskHealthScore;
+  healthScoreObject.disk_text = diskHealthScoreText;
   healthScoreObject.total = totalHealthScore;
+  healthScoreObject.total_text = totalHealthScoreText;
 
   return healthScoreObject;
 };
