@@ -93,8 +93,6 @@ export default {
     };
 
     const formatDate = (dateString) => {
-      console.log('asdf in formatdate');
-      console.log(dateString);
       return new Date(dateString).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
