@@ -121,7 +121,6 @@ export const useAuthStore = defineStore('auth', () => {
       // Then pass it along to vue store, and localstorage (for auth persistence on different pages in the MPA)
       user.value = response.data.user;
       localStorage.setItem('user', JSON.stringify(response.data.user));
-
       return response.data;
     } catch (err) {
       error.value = err.response?.data?.error || 'Login failed';
