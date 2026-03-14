@@ -105,4 +105,15 @@ For a project like this, where I am brand new to both the tech stack and the pro
       - I reject `Dynamic weightings` because I think the health score calculated from shifting weightings would have little/questionable value to the end user.
       - I reject `Omit total health score` because I think the UI should try to make a best effort to give the user a health score. In other words, if CPU metrics are down, but we have Memory and Disk metrics, I feel the UI should still try to make a worst-case projection of that score for the user, while factoring in as much real data as possible.
   - What UX decisions might you make to maximize the value of this health score?
-    - Need to come back to this, I don't fully understand the question
+    - Use color coding to highlight health scores by severity (danger, warn, safe)
+    - Break health score down into further subsections (cpu, memory, disk score), and apply coloring to each. The idea is to help users pinpoint issues at a glance (for example, server 1 could have healthy CPU and disk usage, but unusually high/unhealthy memory usage. The UI flags unhealthy memory health score in this case, to let the user know there may be memory specific issues like a memory leak)
+    - TODO: provide specific tips/potential causes for each subsection to the user
+      - High CPU usage: could be a traffic spike to the server, and/or server running load that isn't CPU efficient. Potential steps could be setting up load balancing for traffic inbound to the server, migrate load to multithreading/parallelism if possible, changing CPU infra
+      - High memory usage: could be a memory leak in application(s) being hosted by the server
+      - High disk usage: could be slow writes (type of disk used, HDD or SDD), large amount of data being kept on disk (could it be kept in memory instead?), application(s) running on server having a legitimate need for disk use (may need to scale up disk infra)
+
+### FE-002 - Server Filtering and Sorting
+- Filtering
+  - Task prompt calls out server filtering for `Servers List`, but should ideally also be offered for the `Recent Servers` table on the dashboard (effectively the same kind of data)
+  - Text search especially, should be case insensitive (user convenience)
+  - To make it clearer to the user why a result was shown to them post-filtering, table row can do partial text match highlighting

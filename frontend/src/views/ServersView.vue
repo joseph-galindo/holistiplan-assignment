@@ -2,20 +2,90 @@
 import { ref, onMounted, computed } from 'vue';
 import { useServersStore } from '../stores/servers';
 import EditServerModal from '../components/EditServerModal.vue';
+import ServerSearchbar from '../components/ServerSearchbar.vue';
 import filterMethods from '../helpers/filterMethods';
 
 export default {
   name: 'ServersView',
   components: {
-    EditServerModal
+    EditServerModal,
+    ServerSearchbar,
   },
   setup() {
+    const searchbarString = ref('');
     const serversStore = useServersStore();
     const servers = computed(() => serversStore.servers);
+    const filteredServers = computed(() => {
+      // When no search string given, return the raw server list
+      if (searchbarString.value === '') {
+        return servers.value;
+      }
+
+      // When a non-empty search string is given, do frontend side filtering:
+      const preparedSearchString = searchbarString.value.toLowerCase().trim();
+      const filteredServers = servers.value.filter((server) => {
+        // Normalize name, status, and location to lowercase
+        // To ensure all strings used for substring matching are always the same case
+
+        // Only attempt to do filtering when field data is a valid string
+        // Filter by server name:
+        let isNameMatch = false;
+        if (typeof server.name === 'string') {
+          const serverName = server.name.toLowerCase().trim();
+          isNameMatch = serverName.includes(preparedSearchString);
+        }
+
+        // Filter by server status:
+        let isStatusMatch = false;
+        if (typeof server.status === 'string') {
+          const serverStatus = server.status.toLowerCase().trim();
+          isStatusMatch = serverStatus.includes(preparedSearchString);
+        }
+
+        // Filter by server ip:
+        let isIpMatch = false;
+        if (typeof server.ip_address === 'string') {
+          const serverIp = server.ip_address.toLowerCase().trim();
+          isIpMatch = serverIp.includes(preparedSearchString);
+        }
+
+        // Filter by server location:
+        // Location is special, default location rendered in UI is 'US-East'
+        // but the actual server object value in this case is `location: ''`
+        // For now, to support us-east search, stub in 'US-East' as needed
+        let isLocationMatch = false;
+        if (typeof server.location === 'string') {
+          let serverLocation = server.location;
+
+          // When server location is empty string, treat it as the UI default ('US-East')
+          if (serverLocation.length === 0) {
+            serverLocation = 'US-East';
+          }
+
+          // Then AFTER, normalize like the other fields
+          serverLocation = server.location.toLowerCase().trim();
+
+          // Last, do substring matching for table filtering
+          isLocationMatch = serverLocation.includes(preparedSearchString);
+        }
+
+        // Finally, the server is preserved in result set, if it is any of the preceding matches:
+        return isNameMatch || isIpMatch || isStatusMatch || isLocationMatch;
+      });
+
+      return filteredServers;
+    });
     const showDeleteModal = ref(false);
     const serverToDelete = ref(null);
     const showEditModal = ref(false);
     const serverToEdit = ref(null);
+
+    const handleSearchbarInput = (newInputString) => {
+      // The parent component (ServersView) sets up the search text state
+      // The child component (ServerSearchbar) simply lets the parent know when the user provides input
+      // From there, the parent ServersView updates the search string, and then directly handles result filtering
+      searchbarString.value = newInputString;
+    };
 
     const getStatusColor = (status) => {
       const colors = {
@@ -85,10 +155,13 @@ export default {
 
     return {
       servers,
+      filteredServers,
       showDeleteModal,
       serverToDelete,
       showEditModal,
       serverToEdit,
+      searchbarString,
+      handleSearchbarInput,
       getStatusColor,
       getHealthScoreColor,
       confirmDelete,
@@ -119,6 +192,12 @@ export default {
         </RouterLink>
       </div>
     </div>
+
+    <!-- Servers Searchbar-->
+    <ServerSearchbar
+      :search-string="searchbarString"
+      @search-input="handleSearchbarInput"
+    />
 
     <!-- Servers Table -->
     <div class="card overflow-hidden">
@@ -151,7 +230,7 @@ export default {
           </thead>
           <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             <tr
-              v-for="server in servers"
+              v-for="server in filteredServers"
               :key="server.id"
             >
               <td class="px-6 py-4 whitespace-nowrap">
@@ -233,7 +312,7 @@ export default {
       </div>
 
       <div
-        v-if="servers.length === 0"
+        v-if="filteredServers.length === 0"
         class="text-center py-12"
       >
         <p class="text-gray-500 dark:text-gray-400">No servers found.</p>
