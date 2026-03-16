@@ -124,6 +124,7 @@ For a project like this, where I am brand new to both the tech stack and the pro
   - From prompt: the main thing that seemed valuable to add would be sort on health score (total), so I added that in to allow user to quickly sort from most -> least healthy, or least -> most healthy servers
   - Would ideally add better sorting UX/sort icons longer term
   - Longer term - the raw servers objects have both `created_at` and `updated_at` timestamps. Exposing these in the table, and more importantly implementing sort for both of them, could be useful for users to quickly gauge server age. `updated_at` could be especially useful (if a server recently stared misbehaving, one of the first things a user would want to know/sort on, is when the server was last modified)
+- Other data that would be valuable to filter on: the Manage users page for the admin view. It could benefit from similar sorting options (filter/sort on user name, admin status, creation/last edit timestamps)
 
 ### Task FE-003: Dashboard Interactivity
 - Did not have time to implement, leaving notes on how I would address
