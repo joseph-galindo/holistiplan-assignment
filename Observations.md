@@ -1,5 +1,5 @@
 ## Time
-**Estimated Time Spent:**
+**Estimated Time Spent:** 10 hours
 
 ## AI
 [x] - Did you use AI tooling during the completion of your work?
@@ -117,3 +117,58 @@ For a project like this, where I am brand new to both the tech stack and the pro
   - Task prompt calls out server filtering for `Servers List`, but should ideally also be offered for the `Recent Servers` table on the dashboard (effectively the same kind of data)
   - Text search especially, should be case insensitive (user convenience)
   - To make it clearer to the user why a result was shown to them post-filtering, table row can do partial text match highlighting
+    - Update: wanted to add this but cut it in the interest of time
+  - Longer term - enabling time-based search w/ calendar widgets, for the timestamp information in the servers objects (`created_at` and `updated_at`), could be powerful, would allow user to filter to only servers created and/or modified in a certain time range
+- Sorting
+  - Added basic support for sort by name, status, location, uptime, health score
+  - From prompt: the main thing that seemed valuable to add would be sort on health score (total), so I added that in to allow user to quickly sort from most -> least healthy, or least -> most healthy servers
+  - Would ideally add better sorting UX/sort icons longer term
+  - Longer term - the raw servers objects have both `created_at` and `updated_at` timestamps. Exposing these in the table, and more importantly implementing sort for both of them, could be useful for users to quickly gauge server age. `updated_at` could be especially useful (if a server recently stared misbehaving, one of the first things a user would want to know/sort on, is when the server was last modified)
+
+### Task FE-003: Dashboard Interactivity
+- Did not have time to implement, leaving notes on how I would address
+- Notes:
+  - Big thing I would start with, add metadata to the backend and UI for data freshness, and/or time range.
+  - Main UX that comes to mind is how datadog (and similar observability systems) implement time-range based search. Tends to have a search widget explaining the time range of the data used to populate the dashboard, clicking in allows user to adjust search time range by text or calendar widget. Changing the date in this manner saves the new time range, and then automatically fetches dashboard data for that time range.
+  - Additionally, I would add a separate button to trigger explicit dashboard data fetch
+  - "Real time" feel of dashboard could be improved by doing periodic background polling of data. When new data comes in, redraw the UI. Another option could be to implement a websocket based connection, so that the frontend can be alerted when new data for that query is available. The frontend could then pull that data via the websocket on-demand, instead of doing a routine scheduled background polling.
+  - Customization options that a user may want on the dashboard could be - widget color schemes, page background color theming (light/dark), text sizing, ability to save and quickly re-apply frequently used search filters
+
+### Task FE-004: Bulk Operations
+- Did not have time to implement, leaving notes on how I would address
+- Notes:
+  - Besides bulk delete and bulk status update, I think these other operations could benefit from bulk operation support
+    - Bulk server creation (user may be rolling out a fleet of new servers with similar configs, or in a similar location/region)
+    - Bulk server update OS (Thinking from a sysadmin POV, if a server is running an OS with a known/critical vuln, there is a good chance that all servers running that vulnerable OS would be updated in one swoop. So ability to update OS en-masse would be useful.)
+    - Bulk user editing (eg, sysadmin may need to activate/deactivate users en-masse, or permission change from admin->nonadmin or vice versa en-masse)
+    - Bulk user deletion (sysadmin could need to bulk offload users that, for whatever reason, no longer should have holistiserve access)
+  - Selection state for servers, I would likely handle in the servers store first, then move around as needed.
+    - The reason I would start in the server store is that several places will need to know about the selections:
+      - Recent servers table
+      - All servers table
+      - Edit modal
+      - Delete modal
+  - Having the selection state in the central store, makes it a lot easier to read and update the selections, to do things like:
+    - populate table UI state (empty selection, button to select all, table row buttons to granularly select/deselect)
+    - I would likely extend the edit modal and delete modals to support "bulk" mode. The idea would be to build off the existing edit and delete modals, but have them offer different UI and behavior when `:server="serverToEdit"` is instead given as a list of servers, not a single server
+  - Confirmation/safety measures
+    - Bulk delete should have a forced prompt/"type here to confirm deletion" type prompt, to help user avoid accidental/fat fingering mass deletion of servers. Bulk deletion has high blast radius potential, this is intentional UX friction to confirm the human user wants to perform these steps before carrying them out in the backend.
+    - When/if this product was further along: servers would ideally have more metadata/RBAC controls, servers could "belong" to certain holistiserve users, or have more fine-grained permissions. A bulk delete should ideally need admin user approval by default, or, a user with proper permission controls should be required to give approval before the deletion request is executed.
+
+### Task FE-005: Error Handling and User Feedback
+- Did not have time to implement, leaving notes on how I would address
+- Notes:
+  - Current notifications users are given:
+    - My account page - editing own user (does have in-page notif currently)
+  - Notifications that users should be given:
+    - Users page - editing existing user (no notif currently)
+    - Users page - creating new user (no notif currently)
+    - Users page - deleting existing user (no notif currently)
+  - Users should be notified of action triggers immediately upon the action being initiated (eg for user creation, notify the user once the actual POST request is triggered). If the action fails to be initiated, the failure/problem should be notified to the user immediately (eg user creation submission does not start POST because the user misinput or omitted a required field).
+    - In the event an async process like a POST was triggered normally, but is long-running, the user should be notified immediately that the process has started, and to check the view later on. When the process is complete, the user should be given some sort of notification - either an app-wide toast, a notifications-specific view like `holistiserve.com/notifications` that gives more details on the specific event, or a combination of these two.
+      - For example, let's say bulk deleting a large amount of servers takes 10 minutes. Some approaches I have seen to this in the wild, is to give the user a clear notification that the process is running, but that it may take a long while and to check back on that view later. Recent example that comes to mind is generating audit log CSV files in CircleCI: the process itself is async and can take 15 or so minutes because of the amount of data it has to peel through to form the final CSV.
+  - Form errors, loading states, and state updates should ideally be communicated as close to the element as possible. For example, loading state for the server status distribution pie chart, should ideally be limited to just that specific widget. If data for the other widgets are available, they should not be pegged to one "global" loading state. Would require rearchitecture to backend (IIRC dashboard stats is currently all one API, outside of recent servers which comes from the main servers api). Form errors already do the granularity to a degree, eg creating a server with the add server modal has an inline error state just for the IP field, if the user tries to create a server without providing IP.
+  - Currently missing loading states are:
+    - Dashboard widgets - total/online/offline/maint server counts, server status distribution pie chart, average resource usage bar chart, recent servers table
+    - Servers page - servers table
+    - Users page - editing user

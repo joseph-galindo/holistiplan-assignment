@@ -1,5 +1,5 @@
 <script>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { useServersStore } from '../stores/servers';
 import EditServerModal from '../components/EditServerModal.vue';
 import ServerSearchbar from '../components/ServerSearchbar.vue';
@@ -12,79 +12,41 @@ export default {
     ServerSearchbar,
   },
   setup() {
-    const searchbarString = ref('');
     const serversStore = useServersStore();
     const servers = computed(() => serversStore.servers);
-    const filteredServers = computed(() => {
-      // When no search string given, return the raw server list
-      if (searchbarString.value === '') {
-        return servers.value;
-      }
-
-      // When a non-empty search string is given, do frontend side filtering:
-      const preparedSearchString = searchbarString.value.toLowerCase().trim();
-      const filteredServers = servers.value.filter((server) => {
-        // Normalize name, status, and location to lowercase
-        // To ensure all strings used for substring matching are always the same case
-
-        // Only attempt to do filtering when field data is a valid string
-        // Filter by server name:
-        let isNameMatch = false;
-        if (typeof server.name === 'string') {
-          const serverName = server.name.toLowerCase().trim();
-          isNameMatch = serverName.includes(preparedSearchString);
-        }
-
-        // Filter by server status:
-        let isStatusMatch = false;
-        if (typeof server.status === 'string') {
-          const serverStatus = server.status.toLowerCase().trim();
-          isStatusMatch = serverStatus.includes(preparedSearchString);
-        }
-
-        // Filter by server ip:
-        let isIpMatch = false;
-        if (typeof server.ip_address === 'string') {
-          const serverIp = server.ip_address.toLowerCase().trim();
-          isIpMatch = serverIp.includes(preparedSearchString);
-        }
-
-        // Filter by server location:
-        // Location is special, default location rendered in UI is 'US-East'
-        // but the actual server object value in this case is `location: ''`
-        // For now, to support us-east search, stub in 'US-East' as needed
-        let isLocationMatch = false;
-        if (typeof server.location === 'string') {
-          let serverLocation = server.location;
-
-          // When server location is empty string, treat it as the UI default ('US-East')
-          if (serverLocation.length === 0) {
-            serverLocation = 'US-East';
-          }
-
-          // Then AFTER, normalize like the other fields
-          serverLocation = server.location.toLowerCase().trim();
-
-          // Last, do substring matching for table filtering
-          isLocationMatch = serverLocation.includes(preparedSearchString);
-        }
-
-        // Finally, the server is preserved in result set, if it is any of the preceding matches:
-        return isNameMatch || isIpMatch || isStatusMatch || isLocationMatch;
-      });
-
-      return filteredServers;
-    });
+    const filteredServers = computed(() => serversStore.filteredServers);
+    const searchbarString = computed(() => serversStore.searchbarStringServers);
+    const sortOptions = computed(() => serversStore.sortOptionsServers);
     const showDeleteModal = ref(false);
     const serverToDelete = ref(null);
     const showEditModal = ref(false);
     const serverToEdit = ref(null);
 
     const handleSearchbarInput = (newInputString) => {
-      // The parent component (ServersView) sets up the search text state
+      // The servers store sets up the search text state
+      // 
       // The child component (ServerSearchbar) simply lets the parent know when the user provides input
-      // From there, the parent ServersView updates the search string, and then directly handles result filtering
-      searchbarString.value = newInputString;
+      // From there, the parent ServersView updates the search string
+      // The ServersStore finally handles result filtering through computed refs
+      serversStore.updateSearchbarStringServers(newInputString);
+    };
+
+    const handleColumnClick = (colName) => {
+      if (typeof colName === 'string') {
+        const newCol = colName;
+        let newDirection = 'asc';
+
+        // Flip sort order, when user clicks on the already sorted column
+        if (newCol === serversStore.sortOptionsServers.col) {
+          const currentDirection = serversStore.sortOptionsServers.direction;
+          newDirection = currentDirection === 'asc' ? 'desc' : 'asc';
+        }
+
+        serversStore.updateSortServers({
+          col: newCol,
+          direction: newDirection,
+        });
+      }
     };
 
     const getStatusColor = (status) => {
@@ -106,6 +68,28 @@ export default {
       const defaultColor = 'text-gray-900 dark:text-gray-100';
 
       return colors[healthScoreText] || defaultColor;
+    };
+
+    const getSortIconForCol = (colName) => {
+      // Data type handling
+      if (typeof colName !== 'string') {
+        return '';
+      }
+
+      // If the column being examined is not actively sorted on, return nil
+      const currentSortCol = serversStore.sortOptionsServers.col;
+      if (currentSortCol !== colName) {
+        return '';
+      }
+
+      // colName is now confirmed to be actively sorted on. Return asc/desc icon as needed.
+      const iconMap = {
+        asc: '^',
+        desc: 'v',
+      };
+      const currentSortDirection = serversStore.sortOptionsServers.direction;
+
+      return iconMap[currentSortDirection];
     };
 
     const confirmDelete = (server) => {
@@ -153,6 +137,16 @@ export default {
       serversStore.fetchServers();
     });
 
+    // Clean up/reset the search input and sort to nil, when this view is unmounted
+    // Todo: provide convenience 'reset' store fns, instead of doing set('default') pattern
+    onUnmounted(() => {
+      serversStore.updateSearchbarStringServers('');
+      serversStore.updateSortServers({
+        col: 'name',
+        direction: 'asc',
+      });
+    });
+
     return {
       servers,
       filteredServers,
@@ -161,9 +155,12 @@ export default {
       showEditModal,
       serverToEdit,
       searchbarString,
+      sortOptions,
       handleSearchbarInput,
+      handleColumnClick,
       getStatusColor,
       getHealthScoreColor,
+      getSortIconForCol,
       confirmDelete,
       deleteServer,
       editServer,
@@ -205,23 +202,43 @@ export default {
         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead class="bg-gray-50 dark:bg-gray-700">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Server
+              <th
+                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                style="cursor: pointer"
+                @click="handleColumnClick('name')"
+              >
+                Server {{ getSortIconForCol('name') }}
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Status
+              <th
+                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                style="cursor: pointer"
+                @click="handleColumnClick('status')"
+              >
+                Status {{ getSortIconForCol('status') }}
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Location
+              <th
+                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                style="cursor: pointer"
+                @click="handleColumnClick('location')"
+              >
+                Location {{ getSortIconForCol('location') }}
               </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Usage
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Health
+              <th
+                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                style="cursor: pointer"
+                @click="handleColumnClick('health_score')"
+              >
+                Health {{ getSortIconForCol('health_score') }}
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Uptime
+              <th
+                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                style="cursor: pointer"
+                @click="handleColumnClick('uptime')"
+              >
+                Uptime {{ getSortIconForCol('uptime') }}
               </th>
               <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Actions

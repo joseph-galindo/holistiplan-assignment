@@ -195,11 +195,136 @@ const generateTransformedDashboardStats = (dashboardStats) => {
   return transformedDashboardStats;
 };
 
+// Helper function to re-use server filtering logic for total servers and recent servers
+// Input: Array of servers to filter (not a ref, the raw array), the search string, and sort options object
+// Output: Array of filtered servers
+const generateFilteredServerList = (optionsObject) => {
+  const originalServers = optionsObject?.originalServers;
+  const searchbarString = optionsObject?.searchbarString;
+  const sortOptions = optionsObject?.sortOptions;
+
+  // Only process when input is an array of servers.
+  if (!Array.isArray(originalServers)) {
+    return originalServers;
+  }
+
+  // Only attempt filtering and sorting when a search string and/or sort options object is given.
+  if (typeof searchbarString !== 'string' && typeof sortOptions !== 'object') {
+    return originalServers;
+  }
+
+  // When a non-empty search string is given, do frontend side filtering:
+  const preparedSearchString = searchbarString.toLowerCase().trim();
+  const filteredServers = originalServers.filter((server) => {
+    // Normalize name, status, and location to lowercase
+    // To ensure all strings used for substring matching are always the same case
+
+    // Only attempt to do filtering when field data is a valid string
+    // Filter by server name:
+    let isNameMatch = false;
+    if (typeof server.name === 'string') {
+      const serverName = server.name.toLowerCase().trim();
+      isNameMatch = serverName.includes(preparedSearchString);
+    }
+
+    // Filter by server status:
+    let isStatusMatch = false;
+    if (typeof server.status === 'string') {
+      const serverStatus = server.status.toLowerCase().trim();
+      isStatusMatch = serverStatus.includes(preparedSearchString);
+    }
+
+    // Filter by server ip:
+    let isIpMatch = false;
+    if (typeof server.ip_address === 'string') {
+      const serverIp = server.ip_address.toLowerCase().trim();
+      isIpMatch = serverIp.includes(preparedSearchString);
+    }
+
+    // Filter by server location
+    let isLocationMatch = false;
+    if (typeof server.location === 'string') {
+      let serverLocation = server.location.toLowerCase().trim();
+      isLocationMatch = serverLocation.includes(preparedSearchString);
+    }
+
+    // Finally, the server is preserved in result set, if it is any of the preceding matches:
+    return isNameMatch || isIpMatch || isStatusMatch || isLocationMatch;
+  });
+
+  // Lastly, do frontend side sorting, if any sort options are given:
+  // Only do the sorting when we have a column and direction given.
+  const sortCol = sortOptions.col;
+  const sortDirection = sortOptions.direction;
+
+  if (sortCol && sortDirection) {
+    const stringSorter = (first, second, direction) => {
+      if (direction === 'asc') {
+        return first.localeCompare(second, 'en', { sensitivity: 'base' });
+      } else {
+        return second.localeCompare(first, 'en', { sensitivity: 'base' });
+      }
+    };
+    const numberSorter = (first, second, direction) => {
+      if (direction === 'asc') {
+        return first - second;
+      } else {
+        return second - first;
+      }
+    };
+    const healthScoreSorter = (first, second, direction) => {
+      return numberSorter(first.total, second.total, direction);
+    };
+
+    filteredServers.sort((firstServer, secondServer) => {
+      const firstColValue = firstServer[sortCol];
+      const secondColValue = secondServer[sortCol];
+
+      let sorter = () => 0;
+      const colType = typeof firstColValue;
+
+      if (colType === 'string') {
+        sorter = stringSorter;
+      }
+
+      if (colType === 'number') {
+        sorter = numberSorter;
+      }
+
+      // Add special override for health_score column, since it's an object
+      if (sortCol === 'health_score') {
+        sorter = healthScoreSorter;
+      }
+
+      return sorter(firstColValue, secondColValue, sortDirection);
+    });
+  }
+
+  return filteredServers;
+};
+
 export const useServersStore = defineStore('servers', () => {
   const servers = ref([]);
   const dashboardStats = ref(null);
   const isLoading = ref(false);
   const error = ref(null);
+
+  // Since the "all servers" and "recent servers" are two distinct views, this could
+  // potentially be one set of search+sort state, that gets shared between both server tables.
+  //
+  // For the time being, I avoided this and made distinct state, just to sandbox the two table states
+  // from eachother, to make it easier to reason about/iterate on, without worrying about user interaction
+  // in the recent servers table affecting the all servers table, and vice versa.
+  const searchbarStringServers = ref('');
+  const searchbarStringRecentServers = ref('');
+  const sortOptionsServers = ref({
+    col: 'name',
+    direction: 'asc',
+  });
+  const sortOptionsRecentServers = ref({
+    col: 'name',
+    direction: 'asc',
+  });
 
   const serversByStatus = computed(() => {
     const grouped = {
@@ -216,6 +341,24 @@ export const useServersStore = defineStore('servers', () => {
     });
     
     return grouped;
+  });
+
+  const filteredServers = computed(() => {
+    const optionsObject = {
+      originalServers: servers.value,
+      searchbarString: searchbarStringServers.value,
+      sortOptions: sortOptionsServers.value,
+    };
+    return generateFilteredServerList(optionsObject);
+  });
+
+  const filteredRecentServers = computed(() => {
+    const optionsObject = {
+      originalServers: servers.value.slice(0,10),
+      searchbarString: searchbarStringRecentServers.value,
+      sortOptions: sortOptionsRecentServers.value,
+    };
+    return generateFilteredServerList(optionsObject);
   });
 
   const totalServers = computed(() => servers.value.length);
@@ -256,7 +399,13 @@ export const useServersStore = defineStore('servers', () => {
     
     try {
       const response = await serversAPI.createServer(serverData);
-      servers.value.push(response.data.server);
+
+      // This creates a server in the backend, then appends the raw BE response to the vue store
+      // However, the new health score stuff expects to have new health_score fields inserted frontend side
+      // So, to keep that UI working without issue, only push the transformed server obj, with health_score, to the vue store
+      // generateTransformedServersList handles generating and embedding the health_score field
+      const [transformedResponse] = generateTransformedServersList([response.data.server]);
+      servers.value.push(transformedResponse);
       return response.data.server;
     } catch (err) {
       error.value = err.response?.data?.error || 'Failed to create server';
@@ -308,12 +457,55 @@ export const useServersStore = defineStore('servers', () => {
     error.value = null;
   };
 
+  // TODO: can consolidate these helpers by using a factory that takes both the new input and the vue ref to update
+  const updateSearchbarStringServers = (newString) => {
+    if (typeof newString === 'string') {
+      searchbarStringServers.value = newString;
+    }
+  };
+
+  const updateSearchbarStringRecentServers = (newString) => {
+    if (typeof newString === 'string') {
+      searchbarStringRecentServers.value = newString;
+    }
+  };
+
+  const updateSortServers = (newSort) => {
+    const supportedCols = ['name', 'status', 'location', 'uptime', 'health_score'];
+    const supportedDirections = ['asc', 'desc'];
+    const newCol = newSort?.col;
+    const newDirection = newSort?.direction;
+
+    if (supportedCols.includes(newCol) && supportedDirections.includes(newDirection)) {
+      sortOptionsServers.value.col = newCol;
+      sortOptionsServers.value.direction = newDirection;
+    }
+  };
+
+  const updateSortRecentServers = (newSort) => {
+    const supportedCols = ['name', 'status', 'location', 'uptime', 'health_score'];
+    const supportedDirections = ['asc', 'desc'];
+    const newCol = newSort?.col;
+    const newDirection = newSort?.direction;
+
+    if (supportedCols.includes(newCol) && supportedDirections.includes(newDirection)) {
+      sortOptionsRecentServers.value.col = newCol;
+      sortOptionsRecentServers.value.direction = newDirection;
+    }
+  };
+
   return {
     servers,
     dashboardStats,
     isLoading,
     error,
+    searchbarStringServers,
+    searchbarStringRecentServers,
+    sortOptionsServers,
+    sortOptionsRecentServers,
     serversByStatus,
+    filteredServers,
+    filteredRecentServers,
     totalServers,
     fetchServers,
     fetchDashboardStats,
@@ -321,6 +513,10 @@ export const useServersStore = defineStore('servers', () => {
     updateServer,
     deleteServer,
     getServerById,
-    clearError
+    clearError,
+    updateSearchbarStringServers,
+    updateSearchbarStringRecentServers,
+    updateSortServers,
+    updateSortRecentServers,
   };
 });

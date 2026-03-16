@@ -1,17 +1,28 @@
 <script>
-import { onMounted, computed } from 'vue';
+import { onMounted, onUnmounted, computed } from 'vue';
 import { useServersStore } from '../stores/servers';
+import ServerSearchbar from '../components/ServerSearchbar.vue';
 import StatusChart from '../components/StatusChart.vue';
 import UsageChart from '../components/UsageChart.vue';
 
 export default {
   name: 'DashboardView',
   components: {
+    ServerSearchbar,
     StatusChart,
     UsageChart
   },
   setup() {
     const serversStore = useServersStore();
+    const searchbarString = computed(() => serversStore.searchbarStringRecentServers);
+    const sortOptions = computed(() => serversStore.sortOptionsRecentServers);
+    const recentServers = computed(() => {
+      return serversStore.servers.slice(0, 10);
+    });
+
+    const filteredRecentServers = computed(() => {
+      return serversStore.filteredRecentServers;
+    });
 
     const statusCounts = computed(() => {
       if (!serversStore.dashboardStats) return {};
@@ -22,6 +33,33 @@ export default {
       if (!serversStore.dashboardStats) return {};
       return serversStore.dashboardStats.average_usage;
     });
+
+    const handleSearchbarInput = (newInputString) => {
+      // The servers store sets up the search text state
+      // 
+      // The child component (ServerSearchbar) simply lets the parent know when the user provides input
+      // From there, the parent DashboardView updates the search string
+      // The ServersStore finally handles result filtering through computed refs
+      serversStore.updateSearchbarStringRecentServers(newInputString);
+    };
+
+    const handleColumnClick = (colName) => {
+      if (typeof colName === 'string') {
+        const newCol = colName;
+        let newDirection = 'asc';
+
+        // Flip sort order, when user clicks on the already sorted column
+        if (newCol === serversStore.sortOptionsRecentServers.col) {
+          const currentDirection = serversStore.sortOptionsRecentServers.direction;
+          newDirection = currentDirection === 'asc' ? 'desc' : 'asc';
+        }
+
+        serversStore.updateSortRecentServers({
+          col: newCol,
+          direction: newDirection,
+        });
+      }
+    };
 
     const getStatusColor = (status) => {
       const colors = {
@@ -44,17 +82,55 @@ export default {
       return colors[healthScoreText] || defaultColor;
     };
 
+    const getSortIconForCol = (colName) => {
+      // Data type handling
+      if (typeof colName !== 'string') {
+        return '';
+      }
+
+      // If the column being examined is not actively sorted on, return nil
+      const currentSortCol = serversStore.sortOptionsRecentServers.col;
+      if (currentSortCol !== colName) {
+        return '';
+      }
+
+      // colName is now confirmed to be actively sorted on. Return asc/desc icon as needed.
+      const iconMap = {
+        asc: '^',
+        desc: 'v',
+      };
+      const currentSortDirection = serversStore.sortOptionsRecentServers.direction;
+
+      return iconMap[currentSortDirection];
+    };
+
     onMounted(async () => {
       await serversStore.fetchServers();
       await serversStore.fetchDashboardStats();
     });
 
+    // Clean up/reset the search input to nil, when this view is unmounted
+    onUnmounted(() => {
+      serversStore.updateSearchbarStringRecentServers('');
+      serversStore.updateSortRecentServers({
+        col: 'name',
+        direction: 'asc',
+      });
+    });
+
     return {
       serversStore,
+      searchbarString,
+      sortOptions,
       statusCounts,
       averageUsage,
+      recentServers,
+      filteredRecentServers,
+      handleSearchbarInput,
+      handleColumnClick,
       getStatusColor,
       getHealthScoreColor,
+      getSortIconForCol,
     };
   }
 };
@@ -111,6 +187,12 @@ export default {
       </div>
     </div>
 
+    <!-- Servers Searchbar-->
+    <ServerSearchbar
+      :search-string="searchbarString"
+      @search-input="handleSearchbarInput"
+    />
+
     <!-- Recent Servers -->
     <div class="card">
       <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -121,29 +203,45 @@ export default {
         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead class="bg-gray-50 dark:bg-gray-700">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Name
+              <th
+                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                style="cursor: pointer"
+                @click="handleColumnClick('name')"
+              >
+                Name {{ getSortIconForCol('name') }}
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Status
+              <th
+                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                style="cursor: pointer"
+                @click="handleColumnClick('status')"
+              >
+                Status {{ getSortIconForCol('status') }}
               </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 IP Address
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Location
+              <th
+                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                style="cursor: pointer"
+                @click="handleColumnClick('location')"
+              >
+                Location {{ getSortIconForCol('location') }}
               </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 CPU Usage
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Health Score
+              <th
+                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                style="cursor: pointer"
+                @click="handleColumnClick('health_score')"
+              >
+                Health Score {{ getSortIconForCol('health_score') }}
               </th>
             </tr>
           </thead>
           <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             <tr
-              v-for="server in serversStore.servers.slice(0, 10)"
+              v-for="server in filteredRecentServers"
               :key="server.id"
             >
               <td class="px-6 py-4 whitespace-nowrap">
