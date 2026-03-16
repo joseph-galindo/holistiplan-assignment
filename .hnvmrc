@@ -1,0 +1,24 @@
+# I ended up needing to specify the hnvmrc, because ./start-dev.sh works like this:
+# - Runs `npm run dev` on your behalf
+# - The `npm run dev` call uses hnvm to pull the nodejs binary from frontend/package.json `hnvm.node` key.
+#   - This ensures `npm run dev` is run with nodejs 22.22.1 based on my package.json config
+# - IMPORTANT: During this resolving process, the env var HNVM_NODE is initially unset.
+#   - However, hnvm silently shell sources `~/.basher/cellar/packages/UrbanCompass/hnvm/.hnvmrc` during this resolution process.
+#   - This rc file specifies `HNVM_NODE=latest`, which then gets set as an env var, **which is visible by future logic** in that same shell process started by `./start-dev.sh` (basically, env var pollution on subsequent logic in the process)
+#
+# - Next, the internals of `npm run dev` itself calls `vite`
+# - `vite` is a js script at `frontend/node_modules/vite/bin/vite.js`
+# - This script starts with `#!/usr/bin/env node`, so it will try to run the script through `node` specified in env
+# - In our case, this is the hnvm node wrapper script at `~/.basher/cellar/packages/UrbanCompass/hnvm/bin/node`
+# - However, on this go-around, `HNVM_NODE` is now an env var set to `latest`.
+#   - The env var takes priority over the package.json hnvm configs. So running `vite` will try to grab the node LTS via hnvm (25.8.1 at time of writing)
+#   - This is actually really bad, because node 25.x doesn't work with the vue devtools release this project is using.
+#     - Known issue: https://github.com/vuejs/devtools/issues/979
+#   - Using node 25.x in this manner causes the vite server to fail on startup due to:
+#     failed to load config from /Users/jgalindo/Projects/fe_homework/frontend/vite.config.js
+#     error when starting dev server:
+#     TypeError: localStorage.getItem is not a function
+# - To fix this with my specific hnvm setup, I create this `frontend/.hnvmrc` file, with the same node 22.22.1 config as the package.json.
+#   - This works because hnvm prioritizes project-local hnvmrc files over the default/fallback `latest` hnvmrc at `~/.basher/cellar/packages/UrbanCompass/hnvm/.hnvmrc`
+#   - Essentially, hnvm internally will do `export HNVM_NODE=latest; export HNVM_NODE=22.22.1`, so the local config "wins"
+HNVM_NODE=22.22.1
